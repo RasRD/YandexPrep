@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodingTask", "CodingTask.csproj", "{1B71C6A8-9192-46DA-A13E-11B7445EA4BA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodingTask", "src\CodingTask\CodingTask.csproj", "{1B71C6A8-9192-46DA-A13E-11B7445EA4BA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodingTask.Tests", "tests\CodingTask.Tests\CodingTask.Tests.csproj", "{6F45854F-6126-4A72-ABF0-0C5B8592ED3E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,5 +14,9 @@ Global
 		{1B71C6A8-9192-46DA-A13E-11B7445EA4BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1B71C6A8-9192-46DA-A13E-11B7445EA4BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1B71C6A8-9192-46DA-A13E-11B7445EA4BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F45854F-6126-4A72-ABF0-0C5B8592ED3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F45854F-6126-4A72-ABF0-0C5B8592ED3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F45854F-6126-4A72-ABF0-0C5B8592ED3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F45854F-6126-4A72-ABF0-0C5B8592ED3E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
