@@ -6,6 +6,7 @@ namespace CodingTask;
 /// </summary>
 public sealed class CacheStorage
 {
+    private readonly object _syncRoot = new();
     private readonly int _cacheSize;
     private readonly Dictionary<long, Entry> _storage;
     private readonly LinkedList<long> _lru = new();
@@ -23,19 +24,22 @@ public sealed class CacheStorage
     {
         ValidateTtl(ttl);
 
-        if (!_storage.TryGetValue(userId, out var entry))
-            return null;
-
-        if (IsExpired(entry.Item, now, ttl))
+        lock (_syncRoot)
         {
-            Remove(userId);
-            return null;
-        }
+            if (!_storage.TryGetValue(userId, out var entry))
+                return null;
 
-        // Move the existing node to MRU in O(1).
-        _lru.Remove(entry.Node);
-        _lru.AddLast(entry.Node);
-        return entry.Item;
+            if (IsExpired(entry.Item, now, ttl))
+            {
+                Remove(userId);
+                return null;
+            }
+
+            // Move the existing node to MRU in O(1).
+            _lru.Remove(entry.Node);
+            _lru.AddLast(entry.Node);
+            return entry.Item;
+        }
     }
 
     public void Add(UserProfile profile, DateTime now, TimeSpan ttl)
@@ -43,28 +47,31 @@ public sealed class CacheStorage
         ArgumentNullException.ThrowIfNull(profile);
         ValidateTtl(ttl);
 
-        // An updated profile is a new entry with a new TTL and MRU position.
-        Remove(profile.Id);
-
-        if (_storage.Count >= _cacheSize)
+        lock (_syncRoot)
         {
-            // On overflow remove expired entries before evicting a valid LRU.
-            var expiredIds = new List<long>();
-            foreach (var (id, entry) in _storage)
-            {
-                if (IsExpired(entry.Item, now, ttl))
-                    expiredIds.Add(id);
-            }
-
-            foreach (var expiredId in expiredIds)
-                Remove(expiredId);
+            // An updated profile is a new entry with a new TTL and MRU position.
+            Remove(profile.Id);
 
             if (_storage.Count >= _cacheSize)
-                Remove(_lru.First!.Value);
-        }
+            {
+                // On overflow remove expired entries before evicting a valid LRU.
+                var expiredIds = new List<long>();
+                foreach (var (id, entry) in _storage)
+                {
+                    if (IsExpired(entry.Item, now, ttl))
+                        expiredIds.Add(id);
+                }
 
-        var node = _lru.AddLast(profile.Id);
-        _storage.Add(profile.Id, new Entry(new CacheItem(profile, now), node));
+                foreach (var expiredId in expiredIds)
+                    Remove(expiredId);
+
+                if (_storage.Count >= _cacheSize)
+                    Remove(_lru.First!.Value);
+            }
+
+            var node = _lru.AddLast(profile.Id);
+            _storage.Add(profile.Id, new Entry(new CacheItem(profile, now), node));
+        }
     }
 
     private static bool IsExpired(CacheItem item, DateTime now, TimeSpan ttl) =>
