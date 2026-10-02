@@ -1,10 +1,10 @@
 namespace CodingTask;
 
+/// <summary>Decorator over a profile source with in-memory LRU + absolute TTL.</summary>
 public sealed class CachedUserProfileService : IUserProfileSource
 {
     private readonly IUserProfileSource _externalProfileSource;
     private readonly ISystemTimeService _systemTimeService;
-
     private readonly CacheStorage _cache;
     private readonly TimeSpan _cacheDuration;
 
@@ -14,29 +14,33 @@ public sealed class CachedUserProfileService : IUserProfileSource
         CacheStorage cache,
         TimeSpan cacheDuration)
     {
-        _externalProfileSource = externalProfileSource;
-        _systemTimeService = systemTimeService;
-        
+        _externalProfileSource = externalProfileSource ?? throw new ArgumentNullException(nameof(externalProfileSource));
+        _systemTimeService = systemTimeService ?? throw new ArgumentNullException(nameof(systemTimeService));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+
+        if (cacheDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(cacheDuration));
         _cacheDuration = cacheDuration;
-        _cache = cache;
     }
-    
+
     public async Task<UserProfile?> GetAsync(long userId, CancellationToken cancellationToken)
     {
-        var now = _systemTimeService.UtcNow();
-        var fromCache = _cache.Get(userId);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (fromCache is not null && now < fromCache.SavedAt + _cacheDuration)
-        {
+        var fromCache = _cache.Get(
+            userId, _systemTimeService.UtcNow(), _cacheDuration);
+
+        if (fromCache is not null)
             return fromCache.Profile;
-        }
-        
-        var externalSourceProfile = await _externalProfileSource.GetAsync(userId, cancellationToken);
-        if (externalSourceProfile is null)
-        {
+
+        var profile = await _externalProfileSource.GetAsync(userId, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (profile is null)
             return null;
-        }
-        _cache.Add(externalSourceProfile, now);
-        return externalSourceProfile;
+
+        // Start TTL after the source has completed, not before awaiting it.
+        _cache.Add(profile, _systemTimeService.UtcNow(), _cacheDuration);
+        return profile;
     }
 }
