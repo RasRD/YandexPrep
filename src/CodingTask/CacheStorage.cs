@@ -1,61 +1,84 @@
 namespace CodingTask;
 
 /// <summary>
-/// Кеш-хранилище. Имеет фиксированный размер, вытесняет объект, который дольше всех не трогали.
+/// In-memory LRU cache with absolute TTL.
+/// This version is not thread-safe; concurrency is a separate exercise.
 /// </summary>
-public class CacheStorage
+public sealed class CacheStorage
 {
     private readonly int _cacheSize;
-    private readonly Dictionary<long, CacheItem> _storage;
-    private readonly LinkedList<long> _lru;
+    private readonly Dictionary<long, Entry> _storage;
+    private readonly LinkedList<long> _lru = new();
+
+    private sealed record Entry(CacheItem Item, LinkedListNode<long> Node);
 
     public CacheStorage(int cacheSize)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cacheSize);
         _cacheSize = cacheSize;
-        _storage = new Dictionary<long, CacheItem>(_cacheSize);
-        _lru = new();
+        _storage = new Dictionary<long, Entry>(cacheSize);
     }
 
-    public void Add(UserProfile profile, DateTime now)
+    public CacheItem? Get(long userId, DateTime now, TimeSpan ttl)
     {
-        if (_storage.ContainsKey(profile.Id))
+        ValidateTtl(ttl);
+
+        if (!_storage.TryGetValue(userId, out var entry))
+            return null;
+
+        if (IsExpired(entry.Item, now, ttl))
         {
-            Remove(profile.Id);
-        } 
-        else if (_storage.Count >= _cacheSize)
-        {
-            Remove();
+            Remove(userId);
+            return null;
         }
-        
-        var item = new CacheItem(profile, now);
-        _storage[profile.Id] = item;
+
+        // Move the existing node to MRU in O(1).
+        _lru.Remove(entry.Node);
+        _lru.AddLast(entry.Node);
+        return entry.Item;
     }
 
-    public CacheItem? Get(long userId)
+    public void Add(UserProfile profile, DateTime now, TimeSpan ttl)
     {
-        _storage.TryGetValue(userId, out var item);
-        if (item is not null) MarkAsUsed(userId);
-        
-        return item;
+        ArgumentNullException.ThrowIfNull(profile);
+        ValidateTtl(ttl);
+
+        // An updated profile is a new entry with a new TTL and MRU position.
+        Remove(profile.Id);
+
+        if (_storage.Count >= _cacheSize)
+        {
+            // On overflow remove expired entries before evicting a valid LRU.
+            var expiredIds = new List<long>();
+            foreach (var (id, entry) in _storage)
+            {
+                if (IsExpired(entry.Item, now, ttl))
+                    expiredIds.Add(id);
+            }
+
+            foreach (var expiredId in expiredIds)
+                Remove(expiredId);
+
+            if (_storage.Count >= _cacheSize)
+                Remove(_lru.First!.Value);
+        }
+
+        var node = _lru.AddLast(profile.Id);
+        _storage.Add(profile.Id, new Entry(new CacheItem(profile, now), node));
     }
 
-    private void MarkAsUsed(long userId)
-    {
-        _lru.Remove(userId);
-        _lru.AddLast(userId);
-    }
-    
-    private void Remove()
-    {
-        var id = _lru.First!.Value;
+    private static bool IsExpired(CacheItem item, DateTime now, TimeSpan ttl) =>
+        now - item.SavedAt >= ttl;
 
-        _lru.RemoveFirst();
-        _storage.Remove(id);
+    private static void ValidateTtl(TimeSpan ttl)
+    {
+        if (ttl <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(ttl));
     }
-    
+
     private void Remove(long userId)
     {
-        _lru.Remove(userId);
-        _storage.Remove(userId);
+        if (_storage.Remove(userId, out var entry))
+            _lru.Remove(entry.Node);
     }
 }
