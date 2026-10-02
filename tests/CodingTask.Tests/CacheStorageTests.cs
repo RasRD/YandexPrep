@@ -2,58 +2,81 @@ namespace CodingTask.Tests;
 
 public class CacheStorageTests
 {
-    [Fact]
-    public async Task ShouldReturn_And_Cache_From_Source()
-    {
-        var now = DateTime.UtcNow;
-        var ttl = TimeSpan.FromSeconds(30);
-        var id = 5;
-        
-        var userData1 = new UserProfile(1, "TestName", "test@email.com");
-        var u1Data = now - ttl;
-        
-        var userData2 = new UserProfile(id, "TestName", "test@email.com");
-        var u2Data = now - 2 * ttl;
-        
-        var userData3 = new UserProfile(id, "TestName", "test@email.com");
-        var u3Data = now;
-        
-        var cacheStorage = new CacheStorage(2);
-        
-        cacheStorage.Add(userData1, u1Data);
-        cacheStorage.Add(userData2, u2Data);
-        cacheStorage.Add(userData3, u3Data);
+    private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
+    private static readonly DateTime Now = new(2026, 10, 2, 10, 0, 0, DateTimeKind.Utc);
 
-        var data = cacheStorage.Get(id);
-        
-        // Assert
-        Assert.Equal(data?.Profile, userData3);
-        Assert.Equal(data?.SavedAt, now);
-        
+    private static UserProfile Profile(long id) => new(id, $"Name{id}", $"user{id}@test.com");
+
+    [Fact]
+    public void Get_ReturnsCachedProfile()
+    {
+        var cache = new CacheStorage(2);
+        var profile = Profile(1);
+        cache.Add(profile, Now, Ttl);
+
+        var result = cache.Get(profile.Id, Now, Ttl);
+
+        Assert.Equal(profile, result?.Profile);
+        Assert.Equal(Now, result?.SavedAt);
     }
-    
+
     [Fact]
-    public async Task Should_Remove_As_LRU()
+    public void Get_WhenTtlExpires_ReturnsNullAndRemovesEntry()
     {
-        var now = DateTime.UtcNow;
-        
-        var userData1 = new UserProfile(1, "TestName", "test@email.com");
-        var userData2 = new UserProfile(2, "TestName", "test@email.com");
-        var userData3 = new UserProfile(3, "TestName", "test@email.com");
-        
-        var cacheStorage = new CacheStorage(2);
-        
-        cacheStorage.Add(userData1, now);
-        cacheStorage.Add(userData2, now);
+        var cache = new CacheStorage(2);
+        cache.Add(Profile(1), Now, Ttl);
 
-        var u1 = cacheStorage.Get(userData1.Id);
-        Assert.Equal(u1?.Profile, userData1);
-        
-        cacheStorage.Add(userData3, now);
+        Assert.Null(cache.Get(1, Now + Ttl, Ttl));
+        Assert.Null(cache.Get(1, Now + Ttl, Ttl));
+    }
 
-        var u2 = cacheStorage.Get(userData2.Id);
-        var u3 = cacheStorage.Get(userData3.Id);
-        Assert.Equal(u3?.Profile, userData3);
-        Assert.Equal(null, u2?.Profile);
+    [Fact]
+    public void Add_WhenFull_EvictsLeastRecentlyUsed()
+    {
+        var cache = new CacheStorage(2);
+        cache.Add(Profile(1), Now, Ttl);
+        cache.Add(Profile(2), Now, Ttl);
+        Assert.NotNull(cache.Get(1, Now, Ttl)); // 1 becomes MRU.
+
+        cache.Add(Profile(3), Now, Ttl);
+
+        Assert.Null(cache.Get(2, Now, Ttl));
+        Assert.NotNull(cache.Get(1, Now, Ttl));
+        Assert.NotNull(cache.Get(3, Now, Ttl));
+    }
+
+    [Fact]
+    public void Add_WhenFull_EvictsExpiredBeforeValidLru()
+    {
+        var cache = new CacheStorage(2);
+        cache.Add(Profile(1), Now - Ttl, Ttl); // expired, but LRU ordering will change.
+        cache.Add(Profile(2), Now, Ttl);
+        // Reading 1 would remove it, so instead make 2 LRU by replacing it.
+        cache.Add(Profile(2), Now, Ttl);
+        // 1 is expired; after overflow we must keep valid 2.
+        cache.Add(Profile(3), Now, Ttl);
+
+        Assert.Null(cache.Get(1, Now, Ttl));
+        Assert.NotNull(cache.Get(2, Now, Ttl));
+        Assert.NotNull(cache.Get(3, Now, Ttl));
+    }
+
+    [Fact]
+    public void Add_ReplacesExistingValueAndResetsTtl()
+    {
+        var cache = new CacheStorage(1);
+        cache.Add(new UserProfile(1, "Old", "old@example.com"), Now - Ttl, Ttl);
+        cache.Add(new UserProfile(1, "New", "new@example.com"), Now, Ttl);
+
+        var result = cache.Get(1, Now, Ttl);
+
+        Assert.Equal("New", result?.Profile.Name);
+        Assert.Equal(Now, result?.SavedAt);
+    }
+
+    [Fact]
+    public void Constructor_RejectsZeroCapacity()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CacheStorage(0));
     }
 }
