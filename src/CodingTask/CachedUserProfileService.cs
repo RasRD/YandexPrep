@@ -25,22 +25,8 @@ public sealed class CachedUserProfileService : IUserProfileSource
     {
         var now = _systemTimeService.UtcNow();
         var fromCache = _cache.Get(userId);
-        
-        // Нет инфы.
-        if (fromCache is null)
-        {
-            var userProfile = await _externalProfileSource.GetAsync(userId, cancellationToken);
-            if (userProfile is null)
-            {
-                return null;
-            }
 
-            _cache.Add(userProfile, now);
-            return userProfile;
-        }
-        
-        // Есть инфа и она свежая.
-        if (now < fromCache.SavedAt + _cacheDuration)
+        if (fromCache is not null && now < fromCache.SavedAt + _cacheDuration)
         {
             return fromCache.Profile;
         }

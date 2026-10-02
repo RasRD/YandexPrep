@@ -1,9 +1,14 @@
 namespace CodingTask;
 
+/// <summary>
+/// Кеш-хранилище. Имеет фиксированный размер, вытесняет объект, который дольше всех не трогали.
+/// </summary>
 public class CacheStorage
 {
     private readonly int _cacheSize;
     private readonly Dictionary<long, CacheItem> _storage;
+    
+    // Конструкция для LRU.
     private Node? _head;
     private Node? _tail;
     private readonly Dictionary<long, Node> _removeCandidates;
@@ -17,70 +22,77 @@ public class CacheStorage
 
     public void Add(UserProfile profile, DateTime now)
     {
-        _storage.Remove(profile.Id);
-
-        if (_storage.Count >= _cacheSize)
+        if (!_storage.ContainsKey(profile.Id))
         {
-            var toRemove = _head;
-
-            if (toRemove != null)
-            {
-                _head = toRemove.Next;
-                _removeCandidates.Remove(toRemove.Id);
-                _storage.Remove(toRemove.Id);
-            }
+            Remove(profile.Id);
+        } 
+        else if (_storage.Count >= _cacheSize)
+        {
+            Remove();
         }
         
-        var cacheItem = new CacheItem(profile, now);
-        var removeCand = new Node()
+        var item = new CacheItem(profile, now);
+        _storage[profile.Id] = item;
+
+        var node = new Node
         {
             Id = profile.Id,
             Next = null,
             Previous = _tail
         };
-
-        _storage[profile.Id] = cacheItem;
-        _tail = removeCand;
-        _removeCandidates[removeCand.Id] = removeCand;
+        _tail?.Next = node;
+        _tail = node;
+        _removeCandidates[profile.Id] = node;
     }
 
     public CacheItem? Get(long userId)
     {
-        if (!_storage.TryGetValue(userId, out var item))
-        {
-            return null;
-        }
-
-        if (!_removeCandidates.TryGetValue(userId, out var cand))
-        {
-            cand = new Node
-            {
-                Id = userId,
-                Next = null,
-                Previous = _tail
-            };
-            _tail = cand;
-            _removeCandidates[userId] = cand;
-        }
-        else
-        {
-            var priv = cand.Previous;
-            var next = cand.Next;
-
-            priv?.Next = next;
-            next?.Previous = priv;
-            
-            _tail = cand;
-        }
+        _storage.TryGetValue(userId, out var item);
+        if (item is not null) MarkAsUsed(userId);
         
         return item;
     }
 
-    private class Node
+    private void MarkAsUsed(long userId)
+    {
+        var node = _removeCandidates[userId];
+
+        node.Previous?.Next = node.Next;
+        node.Next?.Previous = node.Previous;
+
+        node.Next = null;
+        node.Previous = _tail;
+        _tail?.Next = node;
+        _tail = node;
+    }
+    
+    private void Remove()
+    {
+        if (_head is null) return;
+        
+        var toRemove = _head;
+        _head = toRemove.Next;
+        _head.Previous = null;
+
+        _removeCandidates.Remove(toRemove.Id);
+        _storage.Remove(toRemove.Id);
+    }
+    
+    private void Remove(long userId)
+    {
+        if (!_removeCandidates.TryGetValue(userId, out var node)) return;
+        
+        node.Previous?.Next = node.Next;
+        node.Next?.Previous = node.Previous;
+
+        _removeCandidates.Remove(node.Id);
+        _storage.Remove(node.Id);
+    }
+
+    private sealed class Node
     {
         public long Id { get; set; }
         public Node? Next { get; set; }
         public Node? Previous { get; set; }
     }
-    
 }
