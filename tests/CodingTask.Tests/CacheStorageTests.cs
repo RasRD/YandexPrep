@@ -49,11 +49,9 @@ public class CacheStorageTests
     public void Add_WhenFull_EvictsExpiredBeforeValidLru()
     {
         var cache = new CacheStorage(2);
-        cache.Add(Profile(1), Now - Ttl, Ttl); // expired, but LRU ordering will change.
-        cache.Add(Profile(2), Now, Ttl);
-        // Reading 1 would remove it, so instead make 2 LRU by replacing it.
-        cache.Add(Profile(2), Now, Ttl);
-        // 1 is expired; after overflow we must keep valid 2.
+        cache.Add(Profile(2), Now, Ttl); // valid and LRU
+        cache.Add(Profile(1), Now - Ttl, Ttl); // expired, but MRU
+        // The expired MRU must go before the valid LRU.
         cache.Add(Profile(3), Now, Ttl);
 
         Assert.Null(cache.Get(1, Now, Ttl));
