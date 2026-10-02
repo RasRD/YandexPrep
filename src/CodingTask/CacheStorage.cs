@@ -22,7 +22,7 @@ public class CacheStorage
 
     public void Add(UserProfile profile, DateTime now)
     {
-        if (!_storage.ContainsKey(profile.Id))
+        if (_storage.ContainsKey(profile.Id))
         {
             Remove(profile.Id);
         } 
@@ -43,6 +43,7 @@ public class CacheStorage
         _tail?.Next = node;
         _tail = node;
         _removeCandidates[profile.Id] = node;
+        if(_head is null) _head = node;
     }
 
     public CacheItem? Get(long userId)
@@ -71,11 +72,12 @@ public class CacheStorage
         if (_head is null) return;
         
         var toRemove = _head;
-        _head = toRemove.Next;
-        _head.Previous = null;
-
+        
         _removeCandidates.Remove(toRemove.Id);
         _storage.Remove(toRemove.Id);
+        
+        _head = toRemove.Next;
+        _head?.Previous = null;
     }
     
     private void Remove(long userId)

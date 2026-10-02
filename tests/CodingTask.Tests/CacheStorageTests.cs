@@ -31,4 +31,29 @@ public class CacheStorageTests
         Assert.Equal(data?.SavedAt, now);
         
     }
+    
+    [Fact]
+    public async Task Should_Remove_As_LRU()
+    {
+        var now = DateTime.UtcNow;
+        
+        var userData1 = new UserProfile(1, "TestName", "test@email.com");
+        var userData2 = new UserProfile(2, "TestName", "test@email.com");
+        var userData3 = new UserProfile(3, "TestName", "test@email.com");
+        
+        var cacheStorage = new CacheStorage(2);
+        
+        cacheStorage.Add(userData1, now);
+        cacheStorage.Add(userData2, now);
+
+        var u1 = cacheStorage.Get(userData1.Id);
+        Assert.Equal(u1?.Profile, userData1);
+        
+        cacheStorage.Add(userData3, now);
+
+        var u2 = cacheStorage.Get(userData2.Id);
+        var u3 = cacheStorage.Get(userData3.Id);
+        Assert.Equal(u3?.Profile, userData3);
+        Assert.Equal(null, u2?.Profile);
+    }
 }
