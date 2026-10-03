@@ -38,16 +38,29 @@ public sealed class CachedUserProfileService : IUserProfileSource
         if (fromCache is not null)
             return fromCache.Profile;
         
-        var lazyTask = _oneFlight.GetOrAdd(userId, new Lazy<Task<UserProfile?>>(async () => await _externalProfileSource.GetAsync(userId, CancellationToken.None)));
-        
+        var lazyTask = _oneFlight.GetOrAdd(userId,
+            new Lazy<Task<UserProfile?>>(async () =>
+            {
+                try
+                {
+                    var profile = await _externalProfileSource.GetAsync(userId, CancellationToken.None);
+                    
+                    if (profile is null)
+                        return null;
+
+                    // Start TTL after the source has completed, not before awaiting it.
+                    _cache.Add(profile, _systemTimeService.UtcNow(), _cacheDuration);
+                    
+                    return profile;
+                }
+                finally
+                {
+                    _oneFlight.TryRemove(userId, out _);
+                }
+            }));
+
         var profile = await lazyTask.Value;
-        cancellationToken.ThrowIfCancellationRequested();
 
-        if (profile is null)
-            return null;
-
-        // Start TTL after the source has completed, not before awaiting it.
-        _cache.Add(profile, _systemTimeService.UtcNow(), _cacheDuration);
         return profile;
     }
 }
