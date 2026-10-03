@@ -43,6 +43,12 @@ public sealed class CachedUserProfileService : IUserProfileSource
             {
                 try
                 {
+                    var cached = _cache.Get(
+                        userId, _systemTimeService.UtcNow(), _cacheDuration);
+                    
+                    if (cached is not null)
+                        return cached.Profile;
+                    
                     var profile = await _externalProfileSource.GetAsync(userId, CancellationToken.None);
                     
                     if (profile is null)
@@ -59,7 +65,7 @@ public sealed class CachedUserProfileService : IUserProfileSource
                 }
             }));
 
-        var profile = await lazyTask.Value;
+        var profile = await lazyTask.Value.WaitAsync(cancellationToken);
 
         return profile;
     }
