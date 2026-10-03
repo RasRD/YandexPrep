@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace CodingTask;
 
 /// <summary>Decorator over a profile source with in-memory LRU + absolute TTL.</summary>
@@ -7,6 +9,7 @@ public sealed class CachedUserProfileService : IUserProfileSource
     private readonly ISystemTimeService _systemTimeService;
     private readonly CacheStorage _cache;
     private readonly TimeSpan _cacheDuration;
+    private readonly ConcurrentDictionary<long, Lazy<Task<UserProfile?>>> _oneFlight;
 
     public CachedUserProfileService(
         IUserProfileSource externalProfileSource,
@@ -21,6 +24,8 @@ public sealed class CachedUserProfileService : IUserProfileSource
         if (cacheDuration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(cacheDuration));
         _cacheDuration = cacheDuration;
+
+        _oneFlight = new();
     }
 
     public async Task<UserProfile?> GetAsync(long userId, CancellationToken cancellationToken)
@@ -32,8 +37,10 @@ public sealed class CachedUserProfileService : IUserProfileSource
 
         if (fromCache is not null)
             return fromCache.Profile;
-
-        var profile = await _externalProfileSource.GetAsync(userId, cancellationToken);
+        
+        var lazyTask = _oneFlight.GetOrAdd(userId, new Lazy<Task<UserProfile?>>(async () => await _externalProfileSource.GetAsync(userId, CancellationToken.None)));
+        
+        var profile = await lazyTask.Value;
         cancellationToken.ThrowIfCancellationRequested();
 
         if (profile is null)
