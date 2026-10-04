@@ -33,7 +33,7 @@ public sealed class SiteCrawler : ISiteCrawler
             PageResult pageResult;
             try
             {
-                var pageUris = await _pageSource.GetLinksAsync(startPage);
+                var pageUris = await _pageSource.GetLinksAsync(uri);
                 
                 var set = new HashSet<Uri>();
                 var hostRelevant = new List<Uri>();
