@@ -99,7 +99,39 @@ public class CachedUserProfileServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_ForwardsCancellationToken()
+    public async Task GetAsync_ConcurrentMisses_FetchOnce()
+    {
+        const int callers = 100;
+        var source = new Mock<IUserProfileSource>();
+        var clock = new Mock<ISystemTimeService>();
+        clock.Setup(x => x.UtcNow()).Returns(Start);
+        // Hold the fetch open so every caller misses the cache while it is in flight.
+        var fetch = new TaskCompletionSource<UserProfile?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        source.Setup(x => x.GetAsync(5, It.IsAny<CancellationToken>()))
+            .Returns(fetch.Task);
+        var service = new CachedUserProfileService(source.Object, clock.Object, new CacheStorage(2), Ttl);
+
+        var started = 0;
+        var requests = Enumerable.Range(0, callers)
+            .Select(_ => Task.Run(() =>
+            {
+                var request = service.GetAsync(5, CancellationToken.None);
+                Interlocked.Increment(ref started);
+                return request;
+            }))
+            .ToArray();
+
+        // GetAsync has returned for every caller, so all of them are awaiting the fetch.
+        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref started) == callers, TimeSpan.FromSeconds(5)));
+        fetch.SetResult(User);
+
+        var results = await Task.WhenAll(requests);
+        Assert.All(results, profile => Assert.Equal(User, profile));
+        source.Verify(x => x.GetAsync(5, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetAsync_DoesNotForwardCallerTokenToSharedFetch()
     {
         using var cts = new CancellationTokenSource();
         var source = new Mock<IUserProfileSource>();
@@ -110,7 +142,33 @@ public class CachedUserProfileServiceTests
         var service = new CachedUserProfileService(source.Object, clock.Object, new CacheStorage(2), Ttl);
 
         await service.GetAsync(5, cts.Token);
-        source.Verify(x => x.GetAsync(5, cts.Token), Times.Once);
+        // The fetch is shared, so one caller's token must not cancel it for the others.
+        source.Verify(x => x.GetAsync(5, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetAsync_CancelledWaiter_ThrowsWhileOthersGetResult()
+    {
+        using var cts = new CancellationTokenSource();
+        var source = new Mock<IUserProfileSource>();
+        var clock = new Mock<ISystemTimeService>();
+        clock.Setup(x => x.UtcNow()).Returns(Start);
+        var fetch = new TaskCompletionSource<UserProfile?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        source.Setup(x => x.GetAsync(5, It.IsAny<CancellationToken>()))
+            .Returns(fetch.Task);
+        var service = new CachedUserProfileService(source.Object, clock.Object, new CacheStorage(2), Ttl);
+
+        var cancelled = service.GetAsync(5, cts.Token);
+        var other = service.GetAsync(5, CancellationToken.None);
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        Assert.False(other.IsCompleted);
+
+        fetch.SetResult(User);
+        Assert.Equal(User, await other);
+        Assert.Equal(User, await service.GetAsync(5, CancellationToken.None));
+        source.Verify(x => x.GetAsync(5, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
