@@ -33,27 +33,23 @@ public sealed class SiteCrawler : ISiteCrawler
         queue.Enqueue(startPage);
         result.TryAdd(startPage, new PageResult([], null));
 
-        await Parallel.ForAsync(0, _maxConcurrency, async (int index, CancellationToken token) => await ProcessQueueAsync(index, result, queue, startPage.Host));
+        await Parallel.ForAsync(
+            0,
+            _maxConcurrency,
+            async (int index, CancellationToken token) => 
+                await ProcessQueueAsync(result, queue, startPage.Host));
         
         return result;
     }
 
     private async ValueTask ProcessQueueAsync(
-        int workerId,
         ConcurrentDictionary<Uri, PageResult> result,
         ConcurrentQueue<Uri> queue,
         string host
         )
     {
-        await Task.Delay(workerId * 10);
-
-        while (queue.Count > 0)
+        while (queue.TryDequeue(out var uri))
         {
-            if (!queue.TryDequeue(out var uri))
-            {
-                continue;
-            }
-
             PageResult pageResult;
             try
             {
@@ -66,15 +62,14 @@ public sealed class SiteCrawler : ISiteCrawler
                 
                 foreach (var pageUri in pageUris.Where(u => u.Host == host))
                 {
-                    if (!result.ContainsKey(pageUri) && pageUri != uri)
-                    {
-                        queue.Enqueue(pageUri);
-                        result.TryAdd(pageUri, new PageResult([], null));
-                    }
-
                     if (set.Add(pageUri))
                     {
                         hostRelevant.Add(pageUri);
+                    }
+                    
+                    if (pageUri != uri && result.TryAdd(pageUri, new PageResult([], null)))
+                    {
+                        queue.Enqueue(pageUri);
                     }
                 }
                 
