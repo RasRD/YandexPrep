@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
 namespace CodingTask;
@@ -10,15 +11,17 @@ public sealed class SiteCrawler : ISiteCrawler
 {
     private readonly IPageSource _pageSource;
     private readonly int _maxConcurrency;
-    private int _counter;
-    
+
     public SiteCrawler(
         IPageSource pageSource,
         int maxConcurrency)
     {
+        if (maxConcurrency < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxConcurrency));
+        }
         _pageSource = pageSource;
         _maxConcurrency = maxConcurrency;
-        _counter = 0;
     }
     
     /// <summary>
@@ -31,14 +34,15 @@ public sealed class SiteCrawler : ISiteCrawler
         var result = new ConcurrentDictionary<Uri, PageResult>();
         var queue = Channel.CreateUnbounded<Uri>();
         
-        await queue.Writer.WriteAsync(startPage);
+        
         result.TryAdd(startPage, new PageResult([], null));
-        _counter = 1;
+        await queue.Writer.WriteAsync(startPage);
+        var counter = new StrongBox<int>(1);
         
         var tasks = new List<Task>();
         for(var i = 0; i < _maxConcurrency; i++)
         {
-            tasks.Add(DoWork(result, queue, startPage.Host));
+            tasks.Add(DoWork(result, queue, counter, startPage.Host));
         }
         await Task.WhenAll(tasks);
         
@@ -48,6 +52,7 @@ public sealed class SiteCrawler : ISiteCrawler
     private async Task DoWork(
         ConcurrentDictionary<Uri, PageResult> result,
         Channel<Uri> queue,
+        StrongBox<int> counter,
         string host)
     {
         await foreach (var uri in queue.Reader.ReadAllAsync())
@@ -66,9 +71,9 @@ public sealed class SiteCrawler : ISiteCrawler
                         hostRelevant.Add(pageUri);
                     }
                     
-                    if (pageUri != uri && result.TryAdd(pageUri, new PageResult([], null)))
+                    if (pageUri != uri &&result.TryAdd(pageUri, new PageResult([], null)))
                     {
-                        Interlocked.Increment(ref _counter);
+                        Interlocked.Increment(ref counter.Value);
                         await queue.Writer.WriteAsync(pageUri);
                     }
                 }
@@ -81,7 +86,7 @@ public sealed class SiteCrawler : ISiteCrawler
             }     
             
             result[uri] = pageResult;
-            var val = Interlocked.Decrement(ref _counter);
+            var val = Interlocked.Decrement(ref counter.Value);
             if(val == 0) queue.Writer.Complete();
         }
     }
