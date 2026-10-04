@@ -30,7 +30,7 @@ public class SiteCrawlerTests
             .Setup(p => p.GetLinksAsync(u2))
             .ReturnsAsync([]);
         
-        var service = new SiteCrawler(_pageSource.Object);
+        var service = new SiteCrawler(_pageSource.Object, 4);
         
         var testResult = await service.CrawlAsync(start);
         
@@ -58,7 +58,7 @@ public class SiteCrawlerTests
             .Setup(p => p.GetLinksAsync(u2))
             .ReturnsAsync([]);
         
-        var service = new SiteCrawler(_pageSource.Object);
+        var service = new SiteCrawler(_pageSource.Object, 4);
         
         var testResult = await service.CrawlAsync(start);
         
@@ -93,7 +93,7 @@ public class SiteCrawlerTests
             .Setup(p => p.GetLinksAsync(u4))
             .ReturnsAsync([]);
         
-        var service = new SiteCrawler(_pageSource.Object);
+        var service = new SiteCrawler(_pageSource.Object, 4);
         
         var testResult = await service.CrawlAsync(start);
         
@@ -126,7 +126,7 @@ public class SiteCrawlerTests
             .Setup(p => p.GetLinksAsync(u2))
             .ThrowsAsync(exc);
         
-        var service = new SiteCrawler(_pageSource.Object);
+        var service = new SiteCrawler(_pageSource.Object, 4);
         
         var testResult = await service.CrawlAsync(start);
         

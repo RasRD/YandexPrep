@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace CodingTask;
 
 /// <summary>
@@ -6,10 +8,16 @@ namespace CodingTask;
 public sealed class SiteCrawler : ISiteCrawler
 {
     private readonly IPageSource _pageSource;
+    private readonly int _maxConcurrency;
+    private readonly SemaphoreSlim _semaphoreSlim;
     
-    public SiteCrawler(IPageSource pageSource)
+    public SiteCrawler(
+        IPageSource pageSource,
+        int maxConcurrency)
     {
         _pageSource = pageSource;
+        _maxConcurrency = maxConcurrency;
+        _semaphoreSlim = new SemaphoreSlim(maxConcurrency);
     }
     
     /// <summary>
@@ -19,30 +27,49 @@ public sealed class SiteCrawler : ISiteCrawler
     /// <returns>Карта сайта в виде словаря.</returns>
     public async Task<IReadOnlyDictionary<Uri, PageResult>> CrawlAsync(Uri startPage)
     {
-        var result = new Dictionary<Uri, PageResult>();
-        var queued = new HashSet<Uri>();
-        var queue = new Queue<Uri>();
+        var result = new ConcurrentDictionary<Uri, PageResult>();
+        var queue = new ConcurrentQueue<Uri>();
         
         queue.Enqueue(startPage);
-        queued.Add(startPage);
+        result.TryAdd(startPage, new PageResult([], null));
+
+        await Parallel.ForAsync(0, _maxConcurrency, async (int index, CancellationToken token) => await ProcessQueueAsync(index, result, queue, startPage.Host));
+        
+        return result;
+    }
+
+    private async ValueTask ProcessQueueAsync(
+        int workerId,
+        ConcurrentDictionary<Uri, PageResult> result,
+        ConcurrentQueue<Uri> queue,
+        string host
+        )
+    {
+        await Task.Delay(workerId * 10);
 
         while (queue.Count > 0)
         {
-            var uri = queue.Peek();
+            if (!queue.TryDequeue(out var uri))
+            {
+                continue;
+            }
 
             PageResult pageResult;
             try
             {
+                await _semaphoreSlim.WaitAsync();
                 var pageUris = await _pageSource.GetLinksAsync(uri);
-                
+                _semaphoreSlim.Release();
+
                 var set = new HashSet<Uri>();
                 var hostRelevant = new List<Uri>();
                 
-                foreach (var pageUri in pageUris.Where(u => u.Host == startPage.Host))
+                foreach (var pageUri in pageUris.Where(u => u.Host == host))
                 {
-                    if (queued.Add(pageUri))
+                    if (!result.ContainsKey(pageUri) && pageUri != uri)
                     {
                         queue.Enqueue(pageUri);
+                        result.TryAdd(pageUri, new PageResult([], null));
                     }
 
                     if (set.Add(pageUri))
@@ -59,9 +86,6 @@ public sealed class SiteCrawler : ISiteCrawler
             }
 
             result[uri] = pageResult;
-            queue.Dequeue();
         }
-        
-        return result;
     }
 }
