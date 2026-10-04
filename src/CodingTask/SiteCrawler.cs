@@ -35,16 +35,23 @@ public sealed class SiteCrawler : ISiteCrawler
             {
                 var pageUris = await _pageSource.GetLinksAsync(startPage);
                 
-                var hostRelevant = pageUris.Where(u => u.Host == startPage.Host).ToArray();
-                pageResult = new PageResult(hostRelevant, null);
+                var set = new HashSet<Uri>();
+                var hostRelevant = new List<Uri>();
                 
-                foreach (var pageUri in hostRelevant)
+                foreach (var pageUri in pageUris.Where(u => u.Host == startPage.Host))
                 {
                     if (queued.Add(pageUri))
                     {
                         queue.Enqueue(pageUri);
                     }
+
+                    if (set.Add(pageUri))
+                    {
+                        hostRelevant.Add(pageUri);
+                    }
                 }
+                
+                pageResult = new PageResult(hostRelevant, null);
             }
             catch (Exception e)
             {
