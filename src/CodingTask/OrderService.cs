@@ -15,6 +15,11 @@ public sealed class OrderService
         {
             throw new InvalidOperationException();
         }
+
+        if (basket.Any(b => b.Count < 0))
+        {
+            throw new InvalidOperationException();
+        }
         
         var order = new Dictionary<long, int>();
         foreach (var item in basket)
