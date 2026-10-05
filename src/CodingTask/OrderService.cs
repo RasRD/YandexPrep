@@ -11,6 +11,11 @@ public sealed class OrderService
 
     public decimal MakeOrder(ClientData client, IReadOnlyCollection<(long Id, int Count)> basket)
     {
+        if (client.Discount is > 100 or < 0)
+        {
+            throw new InvalidOperationException();
+        }
+        
         var order = new Dictionary<long, int>();
         foreach (var item in basket)
         {
@@ -50,7 +55,7 @@ public sealed class OrderService
             _store[skuC.Key].Count = skuC.Value;
         }
 
-        total *= (decimal)(1 - client.Discount * 0.01) ;
+        total *= 1 - client.Discount * (decimal)0.01 ;
         return Math.Round(total, 2, MidpointRounding.AwayFromZero);
     }
 }
