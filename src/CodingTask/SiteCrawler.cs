@@ -16,10 +16,7 @@ public sealed class SiteCrawler : ISiteCrawler
         IPageSource pageSource,
         int maxConcurrency)
     {
-        if (maxConcurrency < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxConcurrency));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
         _pageSource = pageSource;
         _maxConcurrency = maxConcurrency;
     }
@@ -33,7 +30,6 @@ public sealed class SiteCrawler : ISiteCrawler
     {
         var result = new ConcurrentDictionary<Uri, PageResult>();
         var queue = Channel.CreateUnbounded<Uri>();
-        
         
         result.TryAdd(startPage, new PageResult([], null));
         await queue.Writer.WriteAsync(startPage);
@@ -71,7 +67,7 @@ public sealed class SiteCrawler : ISiteCrawler
                         hostRelevant.Add(pageUri);
                     }
                     
-                    if (pageUri != uri &&result.TryAdd(pageUri, new PageResult([], null)))
+                    if (result.TryAdd(pageUri, new PageResult([], null)))
                     {
                         Interlocked.Increment(ref counter.Value);
                         await queue.Writer.WriteAsync(pageUri);
