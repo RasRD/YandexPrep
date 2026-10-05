@@ -16,7 +16,6 @@ public class OrderServiceTests
         
         var totalPrice = service.MakeOrder(person, [(1, 3), (2, 2)]);
         
-        
         Assert.Equal((decimal)44.18, totalPrice);
     }
     

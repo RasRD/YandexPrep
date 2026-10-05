@@ -25,17 +25,30 @@ public sealed class OrderService
         }
 
         decimal total = 0;
+
+        var skuCount = new Dictionary<long, int>();
         foreach (var item in order)
         {
             if (!_store.ContainsKey(item.Key) || item.Value > _store[item.Key].Count)
             {
                 throw new InvalidOperationException($"Order {item.Key} does not exist");
             }
-
+            
             total += item.Value * _store[item.Key].Price;
-            _store[item.Key].Count -= item.Value;
+            if (!skuCount.ContainsKey(item.Key))
+            {
+                skuCount.Add(item.Key, _store[item.Key].Count -item.Value);
+            }
+            else
+            {
+                skuCount[item.Key] -= item.Value;
+            }
         }
 
+        foreach (var skuC in skuCount)
+        {
+            _store[skuC.Key].Count = skuC.Value;
+        }
 
         total *= (decimal)(1 - client.Discount * 0.01) ;
         return Math.Round(total, 2, MidpointRounding.AwayFromZero);
