@@ -13,10 +13,10 @@ public sealed class OrderService
         _locks = new SkuLocks();
     }
 
-    public SkuData GetSku(long id)
+    public int GetSku(long id)
     {
         using var l = _locks.Lock([id]);
-        return _store[id];
+        return _store[id].Count;
     }
 
     public decimal MakeOrder(ClientData client, IReadOnlyCollection<(long Id, int Count)> basket)
