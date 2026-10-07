@@ -20,6 +20,24 @@ public class OrderServiceTests
     }
     
     [Fact]
+    public async Task OrderService_Should_Process_ParallelOrders()
+    {
+        var store = new Dictionary<long, SkuData>
+        {
+            { 1, new SkuData() { Id = 1, Count = 2, Price = 10 } }
+        };
+        var person = new ClientData("Test", 10);
+
+        var service = new OrderService(store);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Task.WhenAll(
+            Task.Run(() => service.MakeOrder(person, [(1, 1)])),
+            Task.Run(() => service.MakeOrder(person, [(1, 1)])),
+            Task.Run(() => service.MakeOrder(person, [(1, 1)]))));
+        Assert.Equal(0, store[1].Count);
+    }
+    
+    [Fact]
     public void OrderService_Should_Decrease_Sku_Number()
     {
         var store = new Dictionary<long, SkuData>

@@ -1,12 +1,16 @@
+using System.Collections.Concurrent;
+
 namespace CodingTask;
 
 public sealed class OrderService
 {
     private readonly Dictionary<long, SkuData> _store;
+    private readonly SkuLocks  _locks;
     
     public OrderService(Dictionary<long, SkuData> store)
     {
         _store = store;
+        _locks = new SkuLocks();
     }
 
     public decimal MakeOrder(ClientData client, IReadOnlyCollection<(long Id, int Count)> basket)
@@ -33,6 +37,8 @@ public sealed class OrderService
                 order[item.Id] += item.Count;
             }
         }
+
+        using var locks = _locks.Lock([.. order.Keys.OrderDescending()]);
 
         decimal total = 0;
 
@@ -62,5 +68,51 @@ public sealed class OrderService
 
         total *= 1 - client.Discount * (decimal)0.01 ;
         return Math.Round(total, 2, MidpointRounding.AwayFromZero);
+    }
+    
+    public class SkuLocks
+    {
+        private readonly ConcurrentDictionary<long, object> _locks = new();
+
+        public IDisposable Lock(long key)
+        {
+            var objLock = _locks.GetOrAdd(key, _ => new object());
+            Monitor.Enter(objLock);
+            return new Releaser(objLock);
+        }
+        
+        public IDisposable Lock(IReadOnlyCollection<long> keys)
+        {
+            var objects = new List<object>();
+            foreach (var key in keys)
+            {
+                var objLock = _locks.GetOrAdd(key, _ => new object());
+                Monitor.Enter(objLock);
+                objects.Add(objLock);
+            }
+            return new MultipleReleaser(objects);
+        }
+
+        private struct Releaser : IDisposable
+        {
+            private readonly object _toRelease;
+            public Releaser(object toRelease) => _toRelease = toRelease;
+            public void Dispose() => Monitor.Exit(_toRelease);
+        }
+
+        private struct MultipleReleaser : IDisposable
+        {
+            private readonly IReadOnlyCollection<object> _toRelease;
+            
+            public MultipleReleaser(IReadOnlyCollection<object> toRelease) => _toRelease = toRelease;
+
+            public void Dispose()
+            {
+                foreach (var item in _toRelease)
+                {
+                    Monitor.Exit(item);
+                }
+            }
+        }
     }
 }
