@@ -13,6 +13,12 @@ public sealed class OrderService
         _locks = new SkuLocks();
     }
 
+    public SkuData GetSku(long id)
+    {
+        using var l = _locks.Lock([id]);
+        return _store[id];
+    }
+
     public decimal MakeOrder(ClientData client, IReadOnlyCollection<(long Id, int Count)> basket)
     {
         if (client is null || client.Discount is > 100 or < 0)
@@ -70,41 +76,27 @@ public sealed class OrderService
         return Math.Round(total, 2, MidpointRounding.AwayFromZero);
     }
     
-    public class SkuLocks
+    private sealed class SkuLocks
     {
         private readonly ConcurrentDictionary<long, object> _locks = new();
-
-        public IDisposable Lock(long key)
-        {
-            var objLock = _locks.GetOrAdd(key, _ => new object());
-            Monitor.Enter(objLock);
-            return new Releaser(objLock);
-        }
         
         public IDisposable Lock(IReadOnlyCollection<long> keys)
         {
             var objects = new List<object>();
-            foreach (var key in keys)
+            foreach (var key in keys.OrderDescending())
             {
                 var objLock = _locks.GetOrAdd(key, _ => new object());
                 Monitor.Enter(objLock);
                 objects.Add(objLock);
             }
-            return new MultipleReleaser(objects);
+            return new Releaser(objects);
         }
 
         private struct Releaser : IDisposable
         {
-            private readonly object _toRelease;
-            public Releaser(object toRelease) => _toRelease = toRelease;
-            public void Dispose() => Monitor.Exit(_toRelease);
-        }
-
-        private struct MultipleReleaser : IDisposable
-        {
             private readonly IReadOnlyCollection<object> _toRelease;
             
-            public MultipleReleaser(IReadOnlyCollection<object> toRelease) => _toRelease = toRelease;
+            public Releaser(IReadOnlyCollection<object> toRelease) => _toRelease = toRelease;
 
             public void Dispose()
             {
