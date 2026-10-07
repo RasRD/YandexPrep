@@ -11,12 +11,12 @@ public sealed class OrderService
 
     public decimal MakeOrder(ClientData client, IReadOnlyCollection<(long Id, int Count)> basket)
     {
-        if (client.Discount is > 100 or < 0)
+        if (client is null || client.Discount is > 100 or < 0)
         {
             throw new InvalidOperationException();
         }
 
-        if (basket.Any(b => b.Count < 0))
+        if (basket.Count == 0 || basket.Any(b => b.Count < 0))
         {
             throw new InvalidOperationException();
         }
