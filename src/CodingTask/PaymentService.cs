@@ -23,7 +23,7 @@ public sealed class PaymentService
         _systemTimeService = systemTimeService;
     }
     
-    public async Task<ValidationResult> Validate(
+    public async Task<ValidationResult> ValidateAsync(
         long userId,
         decimal amount,
         CancellationToken cancellationToken)
@@ -47,18 +47,18 @@ public sealed class PaymentService
                 paymentDate.Year.Equals(now.Year))
             {
                 if(amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
-                paied += amount;
+                paied += item.Amount;
             }
         }
         
         var limits = await _listLimitsQuery.ExecuteAsync(userId, cancellationToken);
 
-        if (limits.Daily > paied + amount)
+        if (limits.Daily < paied + amount)
         {
             return ValidationResult.DailyLimitReached;
         }
         
-        if (limits.OneTime > amount)
+        if (limits.OneTime < amount)
         {
             return ValidationResult.OnePaymentLimitReached;
         }
