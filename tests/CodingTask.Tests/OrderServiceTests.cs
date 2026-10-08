@@ -30,10 +30,28 @@ public class OrderServiceTests
 
         var service = new OrderService(store);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Task.WhenAll(
-            Task.Run(() => service.MakeOrder(person, [(1, 1)])),
-            Task.Run(() => service.MakeOrder(person, [(1, 1)])),
-            Task.Run(() => service.MakeOrder(person, [(1, 1)]))));
+        using var barrier = new Barrier(3);
+        var orders = Enumerable.Range(0, 3)
+            .Select(_ => Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                return service.MakeOrder(person, [(1, 1)]);
+            }))
+            .ToArray();
+
+        try
+        {
+            await Task.WhenAll(orders);
+        }
+        catch (InvalidOperationException)
+        {
+            // Ожидаем один отказ — проверяем каждую задачу ниже
+        }
+
+        Assert.Equal(2, orders.Count(t => t.IsCompletedSuccessfully));
+        var failed = Assert.Single(orders, t => t.IsFaulted);
+        Assert.IsType<InvalidOperationException>(failed.Exception!.InnerException);
+        Assert.All(orders.Where(t => t.IsCompletedSuccessfully), t => Assert.Equal(9m, t.Result));
         Assert.Equal(0, store[1].Count);
     }
     
