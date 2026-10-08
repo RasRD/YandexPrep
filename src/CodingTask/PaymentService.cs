@@ -28,41 +28,40 @@ public sealed class PaymentService
         decimal amount,
         CancellationToken cancellationToken)
     {
-        if(userId < 0L) throw new ArgumentOutOfRangeException(nameof(userId));
-        
-        if(amount < 0L) throw new ArgumentOutOfRangeException(nameof(amount));
+        if (userId <= 0L) throw new ArgumentOutOfRangeException(nameof(userId));
 
-        var story = await _historyQuery.ExecuteAsync(userId, cancellationToken);
-        
+        if (amount <= 0m) throw new ArgumentOutOfRangeException(nameof(amount));
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var now = _systemTimeService.NowUtc();
-        decimal paied = 0;
+        var dayStart = now.Date;
+        var dayEnd = dayStart.AddDays(1);
 
-        foreach (var item in story)
-        {
-            var paymentDate = item.PaymentDate;
-            
-            if(paymentDate.Kind != DateTimeKind.Utc) throw new ArgumentOutOfRangeException(nameof(paymentDate));
-
-            if (paymentDate.Day.Equals(now.Day) && paymentDate.Month.Equals(now.Month) &&
-                paymentDate.Year.Equals(now.Year))
-            {
-                if(amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
-                paied += item.Amount;
-            }
-        }
-        
         var limits = await _listLimitsQuery.ExecuteAsync(userId, cancellationToken);
 
-        if (limits.Daily < paied + amount)
-        {
-            return ValidationResult.DailyLimitReached;
-        }
-        
         if (limits.OneTime < amount)
         {
             return ValidationResult.OnePaymentLimitReached;
         }
-        
+
+        var history = await _historyQuery.ExecuteAsync(userId, cancellationToken);
+
+        decimal paid = 0;
+
+        foreach (var item in history)
+        {
+            if (item.PaymentDate >= dayStart && item.PaymentDate < dayEnd)
+            {
+                paid += item.Amount;
+            }
+        }
+
+        if (limits.Daily < paid + amount)
+        {
+            return ValidationResult.DailyLimitReached;
+        }
+
         return ValidationResult.Valid;
     }
 }
