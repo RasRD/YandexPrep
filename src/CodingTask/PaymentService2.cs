@@ -1,10 +1,11 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 namespace CodingTask;
 
 public sealed class PaymentService2
 {
-    private readonly ConcurrentDictionary<long, Mutex> _locks = new();
+    private readonly ConcurrentDictionary<long, StrongBox<long>> _locks = new();
     private readonly ConcurrentDictionary<long, List<Payment>> _history;
     private readonly IReadOnlyDictionary<long, Limit> _limits;
     private readonly ISystemTimeService _systemTimeService;
@@ -45,11 +46,9 @@ public sealed class PaymentService2
         }
 
         // LOCK
-        var mutex = _locks.GetOrAdd(userId, _ => new Mutex(true, $"PaymentService2-{userId}"));
-        try
+        var l = _locks.GetOrAdd(userId, new StrongBox<long>(userId));
+        lock (l)
         {
-            mutex.WaitOne();
-            
             // GET
             var history = _history.GetOrAdd(userId, []);
 
@@ -74,10 +73,6 @@ public sealed class PaymentService2
             history.Add(new Payment(amount, now));
 
             return _history;
-        }
-        finally
-        {
-            mutex.ReleaseMutex();
         }
     }
 }
