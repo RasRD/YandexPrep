@@ -19,7 +19,7 @@ public sealed class PaymentService2
         _systemTimeService = systemTimeService;
     }
     
-    public async Task<IDictionary<long, List<Payment>>> ValidateAsync(
+    public async Task<IReadOnlyList<Payment>> ValidateAsync(
         long userId,
         decimal amount,
         CancellationToken cancellationToken)
@@ -39,11 +39,6 @@ public sealed class PaymentService2
             throw new Exception($"No limit found for user id {userId}");
         }
 
-        if (limits.OneTime < amount)
-        {
-            return _history.ToDictionary();
-        }
-
         // LOCK
         var semaphore = _locks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync(cancellationToken);
@@ -51,6 +46,11 @@ public sealed class PaymentService2
         {
             // GET
             var history = _history.GetOrAdd(userId, []);
+
+            if (limits.OneTime < amount)
+            {
+                return history.ToArray();
+            }
 
             // Calculate
             decimal paid = 0;
@@ -65,14 +65,14 @@ public sealed class PaymentService2
             // CHECK
             if (limits.Daily < paid + amount)
             {
-                return _history.ToDictionary();
+                return history.ToArray();
             }
 
             // ADD
             cancellationToken.ThrowIfCancellationRequested();
             history.Add(new Payment(amount, now));
 
-            return _history.ToDictionary();
+            return history.ToArray();
         }
         finally
         {
