@@ -1,11 +1,10 @@
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 
 namespace CodingTask;
 
 public sealed class PaymentService2
 {
-    private readonly ConcurrentDictionary<long, StrongBox<long>> _locks = new();
+    private readonly ConcurrentDictionary<long, SemaphoreSlim> _locks = new();
     private readonly ConcurrentDictionary<long, List<Payment>> _history;
     private readonly IReadOnlyDictionary<long, Limit> _limits;
     private readonly ISystemTimeService _systemTimeService;
@@ -42,12 +41,13 @@ public sealed class PaymentService2
 
         if (limits.OneTime < amount)
         {
-            return _history;
+            return _history.ToDictionary();
         }
 
         // LOCK
-        var l = _locks.GetOrAdd(userId, new StrongBox<long>(userId));
-        lock (l)
+        var semaphore = _locks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(cancellationToken);
+        try
         {
             // GET
             var history = _history.GetOrAdd(userId, []);
@@ -65,14 +65,18 @@ public sealed class PaymentService2
             // CHECK
             if (limits.Daily < paid + amount)
             {
-                return _history;
+                return _history.ToDictionary();
             }
 
             // ADD
             cancellationToken.ThrowIfCancellationRequested();
             history.Add(new Payment(amount, now));
 
-            return _history;
+            return _history.ToDictionary();
+        }
+        finally
+        {
+            semaphore.Release();
         }
     }
 }
